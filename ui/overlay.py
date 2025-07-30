@@ -16,31 +16,100 @@ elif sys.platform == "win32":
 class VentanaOverlay(QtWidgets.QWidget):
     def __init__(self, texto):
         super().__init__()
-        self.setWindowFlags(QtCore.Qt.Tool | QtCore.Qt.WindowStaysOnTopHint)
-        self.setGeometry(400, 100, 600, 350)
+        self.setWindowFlags(
+            QtCore.Qt.FramelessWindowHint |
+            QtCore.Qt.WindowStaysOnTopHint |
+            QtCore.Qt.Tool
+        )
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setStyleSheet("background: rgba(20, 20, 20, 200); border-radius: 20px;")
         self.init_ui(texto)
-        self.proteger_de_screen_share()
 
     def init_ui(self, texto):
         layout = QtWidgets.QVBoxLayout()
-        scroll = QtWidgets.QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background-color: rgba(20,20,20,220); border-radius: 12px;")
-        content = QtWidgets.QWidget(); v = QtWidgets.QVBoxLayout()
-        label = QtWidgets.QLabel(texto); label.setWordWrap(True)
-        label.setStyleSheet("color: white; font-size:16px; padding:16px;")
-        v.addWidget(label); content.setLayout(v); scroll.setWidget(content)
-        layout.addWidget(scroll); self.setLayout(layout)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+
+        # Botón de cerrar
+        cerrar_btn = QtWidgets.QPushButton("❌")
+        cerrar_btn.setFixedSize(30, 30)
+        cerrar_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 255, 255, 30);
+                color: white;
+                font-size: 16px;
+                border: none;
+                border-radius: 15px;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 50);
+            }
+        """)
+        cerrar_btn.clicked.connect(self.close)
+
+        top_bar = QtWidgets.QHBoxLayout()
+        top_bar.addStretch()
+        top_bar.addWidget(cerrar_btn)
+
+        # Label de texto sin scroll
+        label = QtWidgets.QLabel(texto)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: white; font-size: 16px; padding: 8px;")
+        
+        # Configurar tamaño máximo para la ventana
+        label.setMaximumWidth(600)
+        
+        layout.addLayout(top_bar)
+        layout.addWidget(label)
+        self.setLayout(layout)
+        
+        # Ajustar tamaño de la ventana al contenido
+        self.adjustSize()
+        
+        # Limitar tamaño máximo y posicionar
+        max_width = 650
+        max_height = 500
+        if self.width() > max_width:
+            self.resize(max_width, min(self.height(), max_height))
+        if self.height() > max_height:
+            self.resize(self.width(), max_height)
+            
+        # Posicionar en el centro-derecha de la pantalla
+        self.move(400, 100)
 
     def proteger_de_screen_share(self):
+        if sys.platform == "darwin":
+            try:
+                # Asegurar que el winId esté disponible
+                self.winId()
+                # Aplicar inmediatamente a todas las ventanas
+                for win in NSApp.windows():
+                    win.setSharingType_(NSWindowSharingNone)
+                # Aplicar protección adicional múltiples veces para asegurar
+                QtCore.QTimer.singleShot(10, self._aplicar_proteccion_adicional)
+                QtCore.QTimer.singleShot(25, self._aplicar_proteccion_adicional)
+                QtCore.QTimer.singleShot(50, self._aplicar_proteccion_adicional)
+            except Exception as e:
+                print(f"Error en protección macOS VentanaOverlay: {e}")
+                pass
+        elif sys.platform == "win32":
+            try:
+                user32 = ctypes.windll.user32
+                user32.SetWindowDisplayAffinity(int(self.winId()), 0x00000011)
+                # Aplicar protección adicional
+                QtCore.QTimer.singleShot(10, lambda: user32.SetWindowDisplayAffinity(int(self.winId()), 0x00000011))
+            except Exception as e:
+                print(f"Error en protección Windows VentanaOverlay: {e}")
+                pass
+
+    def _aplicar_proteccion_adicional(self):
+        """Aplicar protección adicional específica a esta ventana"""
         if sys.platform == "darwin":
             try:
                 for win in NSApp.windows():
                     win.setSharingType_(NSWindowSharingNone)
             except Exception:
                 pass
-        elif sys.platform == "win32":
-            user32 = ctypes.windll.user32
-            user32.SetWindowDisplayAffinity(int(self.winId()), 0x00000011)
 
 
 class VentanaControl(QtWidgets.QWidget):
@@ -72,6 +141,8 @@ class VentanaControl(QtWidgets.QWidget):
         self.model_selector = QtWidgets.QComboBox()
         self.model_selector.addItems(["Gemini 1.5 Pro", "Gemini 1.5 Flash"])
         self.model_selector.setStyleSheet("padding: 6px; font-size: 13px;")
+        # Conectar señales para proteger dropdown cuando se abra
+        self.model_selector.showPopup = self._show_popup_protegido
 
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.model_selector)
@@ -80,7 +151,76 @@ class VentanaControl(QtWidgets.QWidget):
         self.setLayout(layout)
 
         QtWidgets.QShortcut(QtCore.Qt.Key_Escape, self, self.close)
+        self.proteger_de_screen_share()
         self.show()
+
+    def proteger_de_screen_share(self):
+        if sys.platform == "darwin":
+            try:
+                # Asegurar que el winId esté disponible
+                self.winId()
+                # Aplicar a todas las ventanas de la aplicación
+                for win in NSApp.windows():
+                    win.setSharingType_(NSWindowSharingNone)
+            except Exception as e:
+                print(f"Error en protección macOS VentanaControl: {e}")
+                pass
+        elif sys.platform == "win32":
+            try:
+                user32 = ctypes.windll.user32
+                user32.SetWindowDisplayAffinity(int(self.winId()), 0x00000011)
+            except Exception as e:
+                print(f"Error en protección Windows VentanaControl: {e}")
+                pass
+
+    def _show_popup_protegido(self):
+        """Mostrar popup del combobox y protegerlo"""
+        # Aplicar protección ANTES de mostrar el popup
+        self._proteger_popup()
+        # Pequeño delay para asegurar que la protección se aplique, luego mostrar popup
+        QtCore.QTimer.singleShot(30, lambda: QtWidgets.QComboBox.showPopup(self.model_selector))
+        # Reforzar protección después de mostrar
+        QtCore.QTimer.singleShot(50, self._proteger_popup)
+
+    def _proteger_popup(self):
+        """Proteger el popup del dropdown"""
+        if sys.platform == "darwin":
+            try:
+                # Aplicar inmediatamente a todas las ventanas
+                for win in NSApp.windows():
+                    win.setSharingType_(NSWindowSharingNone)
+                # Aplicar protección adicional múltiples veces
+                QtCore.QTimer.singleShot(10, self._proteger_popup_adicional)
+                QtCore.QTimer.singleShot(25, self._proteger_popup_adicional)
+                QtCore.QTimer.singleShot(40, self._proteger_popup_adicional)
+            except Exception as e:
+                print(f"Error protegiendo popup: {e}")
+        elif sys.platform == "win32":
+            try:
+                # En Windows, aplicar protección a la ventana principal
+                user32 = ctypes.windll.user32
+                user32.SetWindowDisplayAffinity(int(self.winId()), 0x00000011)
+                # También intentar proteger ventanas hijas múltiples veces
+                QtCore.QTimer.singleShot(10, self._proteger_popup_adicional)
+                QtCore.QTimer.singleShot(25, self._proteger_popup_adicional)
+                QtCore.QTimer.singleShot(40, self._proteger_popup_adicional)
+            except Exception as e:
+                print(f"Error protegiendo popup Windows: {e}")
+
+    def _proteger_popup_adicional(self):
+        """Protección adicional para popup"""
+        if sys.platform == "darwin":
+            try:
+                for win in NSApp.windows():
+                    win.setSharingType_(NSWindowSharingNone)
+            except Exception:
+                pass
+        elif sys.platform == "win32":
+            try:
+                user32 = ctypes.windll.user32
+                user32.SetWindowDisplayAffinity(int(self.winId()), 0x00000011)
+            except Exception:
+                pass
 
     def toggle_grabar(self):
         if not self.grabando:
@@ -124,4 +264,7 @@ class VentanaControl(QtWidgets.QWidget):
         if self.overlay_ventana:
             self.overlay_ventana.close()
         self.overlay_ventana = VentanaOverlay(texto)
-        self.overlay_ventana.show()
+        # Aplicar protección ANTES de mostrar la ventana
+        self.overlay_ventana.proteger_de_screen_share()
+        # Pequeño delay para asegurar que la protección se aplique
+        QtCore.QTimer.singleShot(50, self.overlay_ventana.show)
