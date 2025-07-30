@@ -1,0 +1,8 @@
+openai
+PyQt5
+sounddevice
+scipy
+speechrecognition
+pyperclip
+keyboard
+python-dotenv
