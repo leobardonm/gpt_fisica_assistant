@@ -4,5 +4,6 @@ sounddevice
 scipy
 speechrecognition
 pyperclip
-keyboard
 python-dotenv
+pytesseract
+pillow
